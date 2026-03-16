@@ -103,15 +103,15 @@ For Kimodo-SMPLX, motion can be saved in the standard AMASS npz format for compa
 
 ### Default NPZ Output Format
 Generated motions are saved as NPZ files containing:
-- `posed_joints`: Global joint positions `[B, T, J, 3]`
-- `global_rot_mats`: Global joint rotation matrices `[B, T, J, 3, 3]`
-- `local_rot_mats`: Local (parent-relative) joint rotation matrices `[B, T, J, 3, 3]`
-- `foot_contacts`: Foot contact labels [left heel, left toe, right heel, right toes] `[B, T, 4]`
-- `smooth_root_pos`: Smoothed root representations outputted from the model `[B, T, 3]`
-- `root_positions`: The (non-smoothed) trajectory of the actual root joint (e.g., pelvis) `[B, T, 3]`
-- `global_root_heading`: The heading direction output from the model `[B, T, 2]`
+- `posed_joints`: Global joint positions `[T, J, 3]`
+- `global_rot_mats`: Global joint rotation matrices `[T, J, 3, 3]`
+- `local_rot_mats`: Local (parent-relative) joint rotation matrices `[T, J, 3, 3]`
+- `foot_contacts`: Foot contact labels [left heel, left toe, right heel, right toes] `[T, 4]`
+- `smooth_root_pos`: Smoothed root representations outputted from the model `[T, 3]`
+- `root_positions`: The (non-smoothed) trajectory of the actual root joint (e.g., pelvis) `[T, 3]`
+- `global_root_heading`: The heading direction output from the model `[T, 2]`
 
-`B` corresponds to the number of samples, `T` the number of frames, and `J` the number of joints.
+`T` the number of frames and `J` the number of joints.
 
 ## Low-Level Python API
 
