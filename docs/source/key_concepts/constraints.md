@@ -34,6 +34,10 @@ Kimodo is trained to excel at specific types of constraints.
 For SOMA models, constraints may be authored or displayed on the full `somaskel77` skeleton, but Kimodo converts them to the reduced `somaskel30` representation before passing them to the model. See the [skeleton](./skeleton.md) section for more details.
 ```
 
+## Coordinate Space
+
+All constraint values are in a **Y-up** coordinate system with units in **meters**. The model expects constraints relative to a canonical origin where the root starts at XZ = (0, 0) at frame 0. The initial heading can be set via the `first_heading_angle` generation parameter (defaults to 0, facing +Z). See the [constraints JSON format](../user_guide/constraints.md#coordinate-space-and-units) for full details on each field.
+
 ## Time and Scope
 
 In our CLI and demo, constraints can be defined at:

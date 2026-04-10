@@ -62,6 +62,7 @@ user_guide/cli
 user_guide/constraints
 user_guide/output_formats
 user_guide/motion_convert
+user_guide/seed_dataset
 user_guide/configuration
 ```
 
@@ -75,6 +76,17 @@ key_concepts/limitations
 key_concepts/motion_representation
 key_concepts/constraints
 key_concepts/skeleton
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: Benchmark
+:hidden:
+
+benchmark/introduction
+benchmark/pipeline
+benchmark/metrics
+benchmark/results
 ```
 
 ```{toctree}

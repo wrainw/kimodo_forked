@@ -42,6 +42,19 @@ kimodo_gen "A person walks forward and picks something up from the ground." \
 Constraint files can be created and saved from the interactive demo or manually defined following
 the [constraints format guide](constraints.md).
 
+## Output Formats
+
+For full details on output formats, see [this page](output_formats.md).
+
+To convert between these formats offline, see [Motion format conversion](motion_convert.md) (`kimodo_convert`).
+
+CLI generation uses a single **output stem** (`--output`) for all formats (NPZ, AMASS NPZ, CSV, and BVH). It can write either **one file** or **a folder of files**, depending on the number of samples:
+
+- **One sample** (`--num_samples 1`): writes a single file per format at the stem (e.g. `--output test` → `test.npz`, `test.csv`). No folder is created. For SMPLX, AMASS is written to `test_amass.npz`.
+- **Multiple samples**: creates a folder with that stem and writes one file per sample with suffixes `_00`, `_01`, etc. (e.g. `--output test` → `test/test_00.npz`, ...).
+
+Use the `--bvh` flag to also export BVH (SOMA only) to the same stem.
+
 ## Visualizing Generated Motions
 
 Motions generated with the CLI can be visualized in the demo UI. To do this, under "Load/Save" > "Motion", type in the path of the generated output npz file, then click "Load Motion" to load it into the viewer. If you used constraints when generating, those can also be loaded in in a similar way.

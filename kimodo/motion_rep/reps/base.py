@@ -74,7 +74,13 @@ class MotionRepBase:
             self.global_root_stats = Stats(os.path.join(stats_path, "global_root"))
             self.local_root_stats = Stats(os.path.join(stats_path, "local_root"))
             self.body_stats = Stats(os.path.join(stats_path, "body"))
-            # self.stats not set; normalize/unnormalize apply per-part below
+
+            # Global stats
+            mean = torch.cat([self.global_root_stats.mean, self.body_stats.mean])
+            std = torch.cat([self.global_root_stats.std, self.body_stats.std])
+            assert len(mean) == len(std) == self.motion_rep_dim, "There is an stat issue."
+            self.stats = Stats()
+            self.stats.register_from_tensors(mean, std)
 
     def get_root_pos(self, features: torch.Tensor, fallback_to_smooth: bool = True):
         """Extract root positions from a feature tensor.
@@ -224,30 +230,23 @@ class MotionRepBase:
         return self.translate_2d_to(features, target_2d_pos, return_delta_pos=return_delta_pos)
 
     @ensure_batched(features=3)
-    def canonicalize(self, features: torch.Tensor):
+    def canonicalize(self, features: torch.Tensor, normalized: bool = False):
         """Canonicalize heading and planar position at frame 0."""
+        if normalized:
+            features = self.unnormalize(features)
         rotated_features = self.rotate_to_zero(features)
-        return self.translate_2d_to_zero(rotated_features)
+        canonicalized_features = self.translate_2d_to_zero(rotated_features)
+        if normalized:
+            canonicalized_features = self.normalize(canonicalized_features)
+        return canonicalized_features
 
     def normalize(self, features):
-        """Normalize features using per-part stats (global_root, local_root, body)."""
-        gr = slice(0, self.global_root_dim)
-        lr = slice(self.global_root_dim, self.global_root_dim + self.local_root_dim)
-        out = torch.empty_like(features, device=features.device, dtype=features.dtype)
-        out[..., gr] = self.global_root_stats.normalize(features[..., gr])
-        out[..., lr] = self.local_root_stats.normalize(features[..., lr])
-        out[..., self.body_slice] = self.body_stats.normalize(features[..., self.body_slice])
-        return out
+        """Normalize features."""
+        return self.stats.normalize(features)
 
     def unnormalize(self, features):
-        """Undo feature normalization using per-part stats."""
-        gr = slice(0, self.global_root_dim)
-        lr = slice(self.global_root_dim, self.global_root_dim + self.local_root_dim)
-        out = torch.empty_like(features, device=features.device, dtype=features.dtype)
-        out[..., gr] = self.global_root_stats.unnormalize(features[..., gr])
-        out[..., lr] = self.local_root_stats.unnormalize(features[..., lr])
-        out[..., self.body_slice] = self.body_stats.unnormalize(features[..., self.body_slice])
-        return out
+        """Undo feature normalization."""
+        return self.stats.unnormalize(features)
 
     def create_conditions_from_constraints(
         self,

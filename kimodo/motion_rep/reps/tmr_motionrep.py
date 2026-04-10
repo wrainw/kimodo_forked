@@ -15,13 +15,14 @@ from .base import MotionRepBase
 
 
 class TMRMotionRep(MotionRepBase):
-    """Motion representation with global root and global joint positions.
+    """Motion representation with global root and local joint positions.
+    The local joint positions are rotation invariant (they all face z+)
 
     Feature layout:
     - root position ``(x, y, z)``
     - root heading as ``(cos(theta), sin(theta))``
-    - local joint positions (root removed, ground-referenced)
-    - global joint velocities
+    - local joint positions (root and rotation removed)
+    - local joint velocities (rotation removed)
     - binary foot contacts
     """
 
@@ -56,6 +57,7 @@ class TMRMotionRep(MotionRepBase):
         posed_joints: Optional[torch.Tensor] = None,
         *,
         to_normalize: bool,
+        to_canonicalize: bool = False,
         lengths: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Convert motion inputs to this feature representation.
@@ -68,6 +70,7 @@ class TMRMotionRep(MotionRepBase):
             posed_joints: Optional precomputed global joint positions
                 ``[B, T, J, 3]``. If passed, FK is skipped.
             to_normalize: Whether to normalize output features.
+            to_canonicalize: Whether to canonicalize output features (False by default).
             lengths: Optional valid lengths for variable-length batches.
 
         Returns:
@@ -98,10 +101,16 @@ class TMRMotionRep(MotionRepBase):
 
         ground_offset = 0 * root_positions
         ground_offset[..., 1] = root_positions[..., 1]
+
         local_joints_positions = local_joints_positions_origin_is_pelvis[:, :, 1:] + ground_offset[:, :, None]
         velocities = compute_vel_xyz(global_positions, self.fps, lengths=lengths)
-        foot_contacts = foot_detect_from_pos_and_vel(global_positions, velocities, self.skeleton, 0.15, 0.10)
 
+        # Remove the heading angle for each frame
+        RF = RotateFeatures(-root_heading_angle)
+        local_joints_positions = RF.rotate_positions(local_joints_positions)
+        velocities = RF.rotate_positions(velocities)
+
+        foot_contacts = foot_detect_from_pos_and_vel(global_positions, velocities, self.skeleton, 0.15, 0.10)
         features, _ = einops.pack(
             [
                 root_positions,
@@ -112,6 +121,9 @@ class TMRMotionRep(MotionRepBase):
             ],
             "batch time *",
         )
+
+        if to_canonicalize:
+            features = self.canonicalize(features, normalized=False)
 
         if to_normalize:
             features = self.normalize(features)
@@ -143,8 +155,8 @@ class TMRMotionRep(MotionRepBase):
             [
                 RF.rotate_positions(root_pos),
                 RF.rotate_2d_positions(global_root_heading),
-                RF.rotate_positions(local_joints_positions),
-                RF.rotate_positions(velocities),
+                local_joints_positions,  # already rotation invariant
+                velocities,  # already rotation invariant
                 foot_contacts,
             ],
             "batch time *",

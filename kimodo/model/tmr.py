@@ -331,6 +331,7 @@ class TMR(nn.Module):
         with convert_ctx:
             features = self.motion_rep(
                 posed_joints=posed_joints,
+                to_canonicalize=True,
                 to_normalize=True,
                 lengths=lengths,
             )

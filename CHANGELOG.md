@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2026-04-10]
+
+### Added
+- [Kimodo-SOMA-RP-v1.1](https://huggingface.co/nvidia/Kimodo-SOMA-RP-v1.1) and [Kimodo-SOMA-SEED-v1.1](https://huggingface.co/nvidia/Kimodo-SOMA-SEED-v1.1) models and added support in the codebase. If not specified, the latest version of the models will be used automatically with the demo and CLI.
+- [Kimodo Motion Generation Benchmark](https://huggingface.co/datasets/nvidia/Kimodo-Motion-Gen-Benchmark) for standardized evaluation of motion generation models training on the BONES-SEED dataset.
+- Scripts to construct the full benchmark, generate motions for test cases, and compute evaluation metrics. 
+- Documentation explaining the benchmark and how to use the evaluation pipeline.
+- [TMR-SOMA-RP-v1](https://huggingface.co/nvidia/TMR-SOMA-RP-v1) motion-text embedding model to be used for evaluation metrics.
+- Added option to load LLM2Vec text encoder in fp32 precision.
+
+### Fixed
+- Always use batch size 1 with LLM2Vec to avoid unexpected behavior of different embeddings based on batch size.
+- Load LLM2Vec directly onto the GPU, if available.
+- Updated documentation on constraints with more details.
+
 ## [2026-04-01]
 
 ### Fixed

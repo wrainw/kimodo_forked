@@ -53,6 +53,7 @@ class KimodoMotionRep(MotionRepBase):
         local_joint_rots: torch.Tensor,
         root_positions: torch.Tensor,
         to_normalize: bool,
+        to_canonicalize: bool = False,
         lengths: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Convert local rotations and root trajectory into smooth-root features.
@@ -61,6 +62,7 @@ class KimodoMotionRep(MotionRepBase):
             local_joint_rots: Local joint rotation matrices ``[B, T, J, 3, 3]``.
             root_positions: Root positions ``[B, T, 3]``.
             to_normalize: Whether to normalize output features.
+            to_canonicalize: Whether to canonicalize output features (False by default).
             lengths: Optional valid lengths for variable-length batches.
 
         Returns:
@@ -100,6 +102,9 @@ class KimodoMotionRep(MotionRepBase):
             ],
             "batch time *",
         )
+
+        if to_canonicalize:
+            features = self.canonicalize(features, normalized=False)
 
         if to_normalize:
             features = self.normalize(features)

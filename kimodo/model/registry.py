@@ -14,9 +14,11 @@ from typing import Optional
 # Parser expects: org/Family-SKELETON-DATASET-version (e.g. Kimodo-SOMA-RP-v1).
 KIMODO_REPO_IDS = [
     "nvidia/Kimodo-SOMA-RP-v1",
+    "nvidia/Kimodo-SOMA-RP-v1.1",
     "nvidia/Kimodo-SMPLX-RP-v1",
     "nvidia/Kimodo-G1-RP-v1",
     "nvidia/Kimodo-SOMA-SEED-v1",
+    "nvidia/Kimodo-SOMA-SEED-v1.1",
     "nvidia/Kimodo-G1-SEED-v1",
 ]
 TMR_REPO_IDS = [
@@ -24,7 +26,7 @@ TMR_REPO_IDS = [
 ]
 
 # Repo ID without org, for display (e.g. Kimodo-SOMA-RP-v1).
-_REPO_NAME_PATTERN = re.compile(r"^(Kimodo|TMR)-([A-Za-z0-9]+)-(RP|SEED)-v(\d+)$")
+_REPO_NAME_PATTERN = re.compile(r"^(Kimodo|TMR)-([A-Za-z0-9]+)-(RP|SEED)-v(\d+(?:\.\d+)*)$")
 
 
 @dataclass
@@ -73,20 +75,27 @@ def _parse_repo_id(repo_id: str) -> Optional[ModelInfo]:
     )
 
 
+def _version_tuple(v: str) -> tuple[int, ...]:
+    """Parse 'vN' or 'vN.M' into a comparable tuple of ints."""
+    if v.startswith("v"):
+        parts = v[1:].split(".")
+        if all(p.isdigit() for p in parts):
+            return tuple(int(p) for p in parts)
+    return (0,)
+
+
+def _version_key(info: ModelInfo) -> tuple[int, ...]:
+    return _version_tuple(info.version)
+
+
 def _build_registry() -> tuple[list[ModelInfo], dict[str, str], list[str]]:
     """Build model infos, short_key -> repo_id map, and list of short keys.
 
-    When multiple versions exist for the same (family, skeleton, dataset), the base short_key (e.g.
-    kimodo-soma-rp) maps to the latest version's repo_id so that HF resolution finds the newest
-    model.
+    When multiple versions exist for the same (family, skeleton, dataset), each ModelInfo gets a
+    version-specific short_key (e.g. kimodo-soma-rp-v1, kimodo-soma-rp-v2) and a versionless alias
+    (kimodo-soma-rp) is added to MODEL_NAMES pointing to the latest version.  When only one version
+    exists, the short_key stays versionless (e.g. kimodo-smplx-rp).
     """
-
-    def _version_key(info: ModelInfo) -> int:
-        v = info.version
-        if v.startswith("v") and v[1:].isdigit():
-            return int(v[1:])
-        return 0
-
     all_repos = KIMODO_REPO_IDS + TMR_REPO_IDS
     infos: list[ModelInfo] = []
     for repo_id in all_repos:
@@ -95,19 +104,27 @@ def _build_registry() -> tuple[list[ModelInfo], dict[str, str], list[str]]:
             raise ValueError(f"Registry repo ID does not match expected pattern: {repo_id}")
         infos.append(info)
 
-    # Map each base short_key to the latest version's repo_id (by version number)
-    model_names: dict[str, str] = {}
-    seen_short_keys: set[str] = set()
+    # Group by base short_key to detect multi-version families.
+    base_groups: dict[str, list[ModelInfo]] = {}
     for info in infos:
-        if info.short_key in seen_short_keys:
-            continue
-        seen_short_keys.add(info.short_key)
-        candidates = [
-            i for i in infos if i.family == info.family and i.skeleton == info.skeleton and i.dataset == info.dataset
-        ]
-        if candidates:
-            latest = max(candidates, key=_version_key)
-            model_names[info.short_key] = latest.repo_id
+        base_groups.setdefault(info.short_key, []).append(info)
+
+    # For groups with multiple versions, make each short_key version-specific.
+    for base_key, group in base_groups.items():
+        if len(group) > 1:
+            for info in group:
+                info.short_key = f"{base_key}-{info.version}"
+
+    # Map each (now unique) short_key to its repo_id.
+    model_names: dict[str, str] = {}
+    for info in infos:
+        model_names[info.short_key] = info.repo_id
+
+    # Add versionless aliases for multi-version groups, pointing to the latest.
+    for base_key, group in base_groups.items():
+        if len(group) > 1:
+            latest = max(group, key=_version_key)
+            model_names[base_key] = latest.repo_id
 
     return infos, model_names, list(model_names.keys())
 
@@ -120,7 +137,14 @@ KIMODO_MODELS = [info.short_key for info in MODEL_INFOS if info.family == "Kimod
 TMR_MODELS = [info.short_key for info in MODEL_INFOS if info.family == "TMR"]
 
 # Backward compatibility: FRIENDLY_NAMES for any code that still expects it.
+# Includes versioned short_keys and versionless aliases (latest display name).
 FRIENDLY_NAMES = {info.short_key: info.display_name for info in MODEL_INFOS}
+for _key, _repo_id in MODEL_NAMES.items():
+    if _key not in FRIENDLY_NAMES:
+        for _info in MODEL_INFOS:
+            if _info.repo_id == _repo_id:
+                FRIENDLY_NAMES[_key] = _info.display_name
+                break
 
 DEFAULT_MODEL = "kimodo-soma-rp"
 DEFAULT_TEXT_ENCODER_URL = "http://127.0.0.1:9550/"
@@ -237,13 +261,7 @@ def get_versions_for_dataset_skeleton(dataset_ui_label: str, skeleton: str) -> l
         if info.dataset == dataset and info.skeleton == skeleton:
             versions.append(info.version)
 
-    # Sort by numeric part so v2 comes after v1.
-    def version_key(v: str) -> int:
-        if v.startswith("v") and v[1:].isdigit():
-            return int(v[1:])
-        return 0
-
-    return sorted(set(versions), key=version_key)
+    return sorted(set(versions), key=_version_tuple)
 
 
 def get_models_for_dataset_skeleton(
@@ -259,13 +277,7 @@ def get_models_for_dataset_skeleton(
     if family is not None:
         infos = [i for i in infos if i.family == family]
 
-    def version_key(info: ModelInfo) -> int:
-        v = info.version
-        if v.startswith("v") and v[1:].isdigit():
-            return int(v[1:])
-        return 0
-
-    return sorted(infos, key=version_key, reverse=True)
+    return sorted(infos, key=_version_key, reverse=True)
 
 
 def resolve_to_short_key(dataset_ui_label: str, skeleton: str, version: str) -> Optional[str]:
@@ -311,14 +323,7 @@ def _get_latest_for_family_skeleton_dataset(family: str, skeleton: str, dataset:
     ]
     if not candidates:
         return None
-
-    def version_key(info: ModelInfo) -> int:
-        v = info.version
-        if v.startswith("v") and v[1:].isdigit():
-            return int(v[1:])
-        return 0
-
-    return max(candidates, key=version_key)
+    return max(candidates, key=_version_key)
 
 
 def kimodo_short_key_for_skeleton_dataset(skeleton: str, dataset: str) -> Optional[str]:
@@ -341,12 +346,12 @@ def registry_skeleton_for_joint_count(nb_joints: int) -> str:
 
 # Optional version: Family-Skeleton-Dataset-vN or Family-Skeleton-Dataset
 _RESOLVE_FULL_PATTERN = re.compile(
-    r"^(Kimodo|TMR|kimodo|tmr)[\-_]" r"([A-Za-z0-9]+)[\-_]" r"(RP|SEED|rp|seed)" r"(?:[\-_]v(\d+))?$",
+    r"^(Kimodo|TMR|kimodo|tmr)[\-_]" r"([A-Za-z0-9]+)[\-_]" r"(RP|SEED|rp|seed)" r"(?:[\-_]v(\d+(?:\.\d+)*))?$",
     re.IGNORECASE,
 )
 # Partial: Skeleton-Dataset or Skeleton or Dataset (no family)
 _RESOLVE_PARTIAL_PATTERN = re.compile(
-    r"^([A-Za-z0-9]+)(?:[\-_](RP|SEED|rp|seed))?(?:[\-_]v(\d+))?$",
+    r"^([A-Za-z0-9]+)(?:[\-_](RP|SEED|rp|seed))?(?:[\-_]v(\d+(?:\.\d+)*))?$",
     re.IGNORECASE,
 )
 

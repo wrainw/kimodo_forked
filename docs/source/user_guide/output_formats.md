@@ -1,12 +1,5 @@
 # Output Formats
 
-CLI generation uses a single **output stem** (`--output`) for all formats (NPZ, AMASS NPZ, CSV, and BVH). It can write either **one file** or **a folder of files**, depending on the number of samples:
-
-- **One sample** (`--num_samples 1`): writes a single file per format at the stem (e.g. `--output test` → `test.npz`, `test.csv`). No folder is created. For SMPLX, AMASS is written to `test_amass.npz`.
-- **Multiple samples**: creates a folder with that stem and writes one file per sample with suffixes `_00`, `_01`, etc. (e.g. `--output test` → `test/test_00.npz`, ...).
-
-Use the `--bvh` flag to also export BVH (SOMA only) to the same stem.
-
 ## Converting Between Formats
 
 To convert between the formats described below, see [Motion format conversion](motion_convert.md) (`kimodo_convert`).

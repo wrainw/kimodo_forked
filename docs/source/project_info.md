@@ -8,7 +8,7 @@ If you use this code in your research, please cite:
 @article{Kimodo2026,
   title={Kimodo: Scaling Controllable Human Motion Generation},
   author={Rempe, Davis and Petrovich, Mathis and Yuan, Ye and Zhang, Haotian and Peng, Xue Bin and Jiang, Yifeng and Wang, Tingwu and Iqbal, Umar and Minor, David and de Ruyter, Michael and Li, Jiefeng and Tessler, Chen and Lim, Edy and Jeong, Eugene and Wu, Sam and Hassani, Ehsan and Huang, Michael and Yu, Jin-Bey and Chung, Chaeyeon and Song, Lina and Dionne, Olivier and Kautz, Jan and Yuen, Simon and Fidler, Sanja},
-  journal={arXiv},
+  journal={arXiv:2603.15546},
   year={2026}
 }
 ```

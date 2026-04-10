@@ -255,7 +255,7 @@ class SOMASkeleton30(SkeletonBase):
         local_joint_rots_mats[:, skel_slice] = local_joint_rots_subset
         return local_joint_rots_mats
 
-    @ensure_batched(local_joint_rots_full=4)
+    @ensure_batched(local_joint_rots_full=4) # [BT, J, 3, 3]
     def from_SOMASkeleton77(self, local_joint_rots_full: torch.Tensor) -> torch.Tensor:
         """Extract the 30-joint subset from 77-joint local rotation data."""
         skel_slice = self.get_skel_slice(self.somaskel77)

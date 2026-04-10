@@ -19,6 +19,7 @@ class LLM2VecEncoder:
         peft_model_name_or_path: str,
         dtype: str,
         llm_dim: int,
+        device: str = "auto",
     ) -> None:
         torch_dtype = getattr(torch, dtype)
         self.llm_dim = llm_dim
@@ -34,6 +35,7 @@ class LLM2VecEncoder:
             peft_model_name_or_path=peft_model_name_or_path,
             torch_dtype=torch_dtype,
             cache_dir=cache_dir,
+            device_map=device,
         )
         self.model.eval()
         for p in self.model.parameters():
@@ -57,7 +59,16 @@ class LLM2VecEncoder:
             is_string = True
 
         with torch.no_grad():
-            encoded_text = self.model.encode(text, batch_size=len(text), show_progress_bar=False)
+            encoded_text = self.model.encode(
+                text,
+                # IMPORTANT: different batch sizes unexpectedly change the output embeddings, so we always set it to 1
+                #            here for repeatability no matter how many texts are being encoded. This
+                #            is a fundamental issue with transformers, and is especially bad at lower
+                #            precisions (https://github.com/huggingface/transformers/issues/25420#issuecomment-1775317535)
+                #            note: this is an internal batch size used by llm2vec - the text list can still be of arbitrary length.
+                batch_size=1,
+                show_progress_bar=False,
+            )
 
         assert len(encoded_text.shape)
         assert self.llm_dim == encoded_text.shape[-1]

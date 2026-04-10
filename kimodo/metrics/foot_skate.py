@@ -17,6 +17,17 @@ from kimodo.tools import ensure_batched
 from .base import Metric
 
 
+def get_four_contacts(fidx: list):
+    if len(fidx) == 4:
+        return fidx
+    if len(fidx) == 6:
+        # For soma77
+        # remove "LeftToeEnd" and "RightToeEnd"
+        fidx = fidx[:2] + fidx[3:5]
+        return fidx
+    raise ValueError("Expects 4 or 6 foot joints (heel/toe per foot)")
+
+
 class FootSkateFromHeight(Metric):
     """When toe joint is near the floor, measures mean velocity of the toes."""
 
@@ -40,8 +51,7 @@ class FootSkateFromHeight(Metric):
         **kwargs,
     ) -> Dict:
         fidx = self.skeleton.foot_joint_idx
-        if len(fidx) != 4:
-            raise ValueError("FootSkateFromHeight expects four foot joints (heel/toe per foot)")
+        fidx = get_four_contacts(fidx)
 
         feet_pos = posed_joints[:, :, fidx]
         toe_pos = feet_pos[:, :, [1, 3]]
@@ -89,9 +99,16 @@ class FootSkateFromContacts(Metric):
         **kwargs,
     ) -> Dict:
         fidx = self.skeleton.foot_joint_idx
+        fidx = get_four_contacts(fidx)
+
         feet_pos = posed_joints[:, :, fidx]
         dt = 1.0 / self.fps
         foot_vel = torch.norm(feet_pos[:, 1:] - feet_pos[:, :-1], dim=-1) / dt
+
+        if foot_contacts.shape[-1] == 6:
+            # For soma77
+            # remove "LeftToeEnd" and "RightToeEnd"
+            foot_contacts = foot_contacts[..., [0, 1, 3, 4]]
 
         foot_contacts = foot_contacts[:, :-1]
         vel_err = foot_vel * foot_contacts
@@ -146,7 +163,7 @@ class FootSkateRatio(Metric):
         **kwargs,
     ) -> Dict:
         fidx = self.skeleton.foot_joint_idx
-        assert len(fidx) == 4, "This metric assumes 4 foot joints: heel, toe, heel, toe"
+        fidx = get_four_contacts(fidx)
 
         feet_pos = posed_joints[:, :, fidx]
         toe_pos = feet_pos[:, :, [1, 3]]
@@ -215,7 +232,11 @@ class FootContactConsistency(Metric):
             self.height_thresh,
         )
 
-        # compute accuracy of predicted, treating heuristic as ground truth
+        if foot_contacts.shape[-1] == 6:
+            # For soma77
+            # remove "LeftToeEnd" and "RightToeEnd"
+            foot_contacts = foot_contacts[..., [0, 1, 3, 4]]
+
         num_contacts = foot_contacts.shape[-1]
         incorrect = torch.logical_xor(heuristic_contacts, foot_contacts)
         # account for generated length

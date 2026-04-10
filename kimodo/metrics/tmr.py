@@ -282,9 +282,12 @@ class TMR_EmbeddingMetric(Metric):
         )
         for key, val in t2m_metrics.items():
             output["TMR/t2m_R/" + key] = val
-        mu_gen, cov_gen = calculate_activation_statistics(motion_gen_latents)
-        mu_text, cov_text = calculate_activation_statistics(text_latents)
-        output["TMR/FID/gen_text"] = calculate_frechet_distance(mu_gen, cov_gen, mu_text, cov_text)
+        if batch_size >= 2:
+            mu_gen, cov_gen = calculate_activation_statistics(motion_gen_latents)
+            mu_text, cov_text = calculate_activation_statistics(text_latents)
+            output["TMR/FID/gen_text"] = calculate_frechet_distance(mu_gen, cov_gen, mu_text, cov_text)
+        else:
+            output["TMR/FID/gen_text"] = float("nan")
         if self.saved_motion_gt_latents:
             motion_gt_latents = np.concatenate(self.saved_motion_gt_latents)
             assert motion_gt_latents.shape == motion_gen_latents.shape
@@ -306,9 +309,13 @@ class TMR_EmbeddingMetric(Metric):
             )
             for key, val in t2gm_metrics.items():
                 output["TMR/t2m_gt_R/" + key] = val
-            mu_gt_motion, cov_gt_motion = calculate_activation_statistics(motion_gt_latents)
-            output["TMR/FID/gen_gt"] = calculate_frechet_distance(mu_gen, cov_gen, mu_gt_motion, cov_gt_motion)
-            output["TMR/FID/gt_text"] = calculate_frechet_distance(mu_gt_motion, cov_gt_motion, mu_text, cov_text)
+            if batch_size >= 2:
+                mu_gt_motion, cov_gt_motion = calculate_activation_statistics(motion_gt_latents)
+                output["TMR/FID/gen_gt"] = calculate_frechet_distance(mu_gen, cov_gen, mu_gt_motion, cov_gt_motion)
+                output["TMR/FID/gt_text"] = calculate_frechet_distance(mu_gt_motion, cov_gt_motion, mu_text, cov_text)
+            else:
+                output["TMR/FID/gen_gt"] = float("nan")
+                output["TMR/FID/gt_text"] = float("nan")
         for key, val in output.items():
             if isinstance(val, (int, float, np.integer, np.floating)):
                 val = torch.tensor([val for _ in range(batch_size)])
@@ -341,9 +348,13 @@ def compute_tmr_retrieval_metrics(
     for key, val in t2m_metrics.items():
         output[f"TMR/t2m_R/{key}"] = float(val)
 
-    mu_gen, cov_gen = calculate_activation_statistics(motion_emb)
-    mu_text, cov_text = calculate_activation_statistics(text_emb)
-    output["TMR/FID/gen_text"] = float(calculate_frechet_distance(mu_gen, cov_gen, mu_text, cov_text))
+    n_samples = len(motion_emb)
+    if n_samples >= 2:
+        mu_gen, cov_gen = calculate_activation_statistics(motion_emb)
+        mu_text, cov_text = calculate_activation_statistics(text_emb)
+        output["TMR/FID/gen_text"] = float(calculate_frechet_distance(mu_gen, cov_gen, mu_text, cov_text))
+    else:
+        output["TMR/FID/gen_text"] = float("nan")
 
     if gt_motion_emb is not None:
         if gt_motion_emb.shape != motion_emb.shape:
@@ -370,9 +381,13 @@ def compute_tmr_retrieval_metrics(
         for key, val in t2gm_metrics.items():
             output[f"TMR/t2m_gt_R/{key}"] = float(val)
 
-        mu_gt_motion, cov_gt_motion = calculate_activation_statistics(gt_motion_emb)
-        output["TMR/FID/gen_gt"] = float(calculate_frechet_distance(mu_gen, cov_gen, mu_gt_motion, cov_gt_motion))
-        output["TMR/FID/gt_text"] = float(calculate_frechet_distance(mu_gt_motion, cov_gt_motion, mu_text, cov_text))
+        if n_samples >= 2:
+            mu_gt_motion, cov_gt_motion = calculate_activation_statistics(gt_motion_emb)
+            output["TMR/FID/gen_gt"] = float(calculate_frechet_distance(mu_gen, cov_gen, mu_gt_motion, cov_gt_motion))
+            output["TMR/FID/gt_text"] = float(calculate_frechet_distance(mu_gt_motion, cov_gt_motion, mu_text, cov_text))
+        else:
+            output["TMR/FID/gen_gt"] = float("nan")
+            output["TMR/FID/gt_text"] = float("nan")
 
     return output
 

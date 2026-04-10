@@ -82,6 +82,12 @@ kimodo/
 │   ├── sanitize.py               # Input sanitization
 │   ├── assets.py                 # Asset path resolution
 │   └── tools.py                  # General utilities
+├── benchmark/                    # Evaluation pipeline scripts
+│   ├── create_benchmark.py       # Step 1: Build test suite from SEED + metadata
+│   ├── generate_eval.py          # Step 2: Generate motions for test suite
+│   ├── embed_folder.py           # Step 3: Embed motions and text with TMR
+│   ├── evaluate_folder.py        # Step 4: Compute metrics for test cases
+│   └── parse_folder.py           # Step 5: Aggregate and display results
 ├── MotionCorrection/             # Optional C++/Python post-processing
 │   ├── python/motion_correction/ # Python bindings
 │   └── src/cpp/                  # C++ implementation

@@ -28,6 +28,7 @@ TEXT_ENCODER_PRESETS = {
             "peft_model_name_or_path": "McGill-NLP/LLM2Vec-Meta-Llama-3-8B-Instruct-mntp-supervised",
             "dtype": "bfloat16",
             "llm_dim": 4096,
+            "device": "auto",
         },
     }
 }
@@ -64,27 +65,29 @@ def _build_api_text_encoder_conf(text_encoder_url: str) -> dict:
     }
 
 
-def _build_local_text_encoder_conf() -> dict:
+def _build_local_text_encoder_conf(text_encoder_fp32: bool = False) -> dict:
     text_encoder_name = get_env_var("TEXT_ENCODER", DEFAULT_TEXT_ENCODER)
     if text_encoder_name not in TEXT_ENCODER_PRESETS:
         available = ", ".join(sorted(TEXT_ENCODER_PRESETS))
         raise ValueError(f"Unknown TEXT_ENCODER='{text_encoder_name}'. Available: {available}")
 
     preset = TEXT_ENCODER_PRESETS[text_encoder_name]
+    if text_encoder_fp32:
+        preset["kwargs"]["dtype"] = "float32"
     return {
         "_target_": preset["target"],
         **preset["kwargs"],
     }
 
 
-def _select_text_encoder_conf(text_encoder_url: str) -> dict:
+def _select_text_encoder_conf(text_encoder_url: str, text_encoder_fp32: bool = False) -> dict:
     # TEXT_ENCODER_MODE options:
     # - "api": force TextEncoderAPI
     # - "local": force local LLM2VecEncoder
     # - "auto": try API first, fallback to local if unreachable
     mode = get_env_var("TEXT_ENCODER_MODE", "auto").lower()
     if mode == "local":
-        return _build_local_text_encoder_conf()
+        return _build_local_text_encoder_conf(text_encoder_fp32)
     if mode == "api":
         return _build_api_text_encoder_conf(text_encoder_url)
 
@@ -99,7 +102,7 @@ def _select_text_encoder_conf(text_encoder_url: str) -> dict:
             "Text encoder service is unreachable, falling back to local LLM2Vec "
             f"encoder. ({type(error).__name__}: {error})"
         )
-        return _build_local_text_encoder_conf()
+        return _build_local_text_encoder_conf(text_encoder_fp32)
 
 
 def load_model(
@@ -109,6 +112,7 @@ def load_model(
     default_family: Optional[str] = "Kimodo",
     return_resolved_name: bool = False,
     text_encoder=None,
+    text_encoder_fp32: bool = False,
 ):
     """Load a kimodo model by name (e.g. 'g1', 'soma').
 
@@ -129,6 +133,7 @@ def load_model(
             return only the model.
         text_encoder: Pre-built text encoder to reuse. When provided, skips
             text encoder selection/instantiation entirely.
+        text_encoder_fp32: If True, uses fp32 for the text encoder rather than default bfloat16.
 
     Returns:
         Loaded model in eval mode, or (model, resolved short key) if
@@ -186,7 +191,7 @@ def load_model(
         runtime_conf = OmegaConf.create(
             {
                 "checkpoint_dir": str(model_path),
-                "text_encoder": _select_text_encoder_conf(text_encoder_url),
+                "text_encoder": _select_text_encoder_conf(text_encoder_url, text_encoder_fp32),
             }
         )
 
