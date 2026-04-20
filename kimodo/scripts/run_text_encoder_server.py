@@ -3,6 +3,7 @@
 
 import argparse
 import os
+import tempfile
 
 import gradio as gr
 import numpy as np
@@ -15,7 +16,7 @@ os.environ["HF_ENABLE_PARALLEL_LOADING"] = "YES"
 DEFAULT_TEXT = "A person walks and falls to the ground."
 DEFAULT_SERVER_NAME = "0.0.0.0"
 DEFAULT_SERVER_PORT = 9550
-DEFAULT_TMP_FOLDER = "/tmp/text_encoder/"
+DEFAULT_TMP_FOLDER = os.path.join(tempfile.gettempdir(), "text_encoder")
 DEFAULT_TEXT_ENCODER = "llm2vec"
 TEXT_ENCODER_PRESETS = {
     "llm2vec": {
@@ -93,12 +94,13 @@ def main():
     server_name = _get_env("GRADIO_SERVER_NAME", DEFAULT_SERVER_NAME)
     server_port = int(_get_env("GRADIO_SERVER_PORT", DEFAULT_SERVER_PORT))
     theme, css = get_gradio_theme()
-    os.makedirs(args.tmp_folder, exist_ok=True)
+    tmp_folder = os.path.abspath(os.path.expanduser(args.tmp_folder))
+    os.makedirs(tmp_folder, exist_ok=True)
     text_encoder = _build_text_encoder(args.text_encoder, args.fp32)
     display_name = TEXT_ENCODER_PRESETS[args.text_encoder]["display_name"]
-    demo_wrapper_fn = DemoWrapper(text_encoder, args.tmp_folder)
+    demo_wrapper_fn = DemoWrapper(text_encoder, tmp_folder)
 
-    with gr.Blocks(title="Text encoder", css=css, theme=theme) as demo:
+    with gr.Blocks(title="Text encoder") as demo:
         gr.Markdown(f"# Text encoder: {display_name}")
         gr.Markdown("## Description")
         gr.Markdown("Get a embeddings from a text.")
@@ -163,7 +165,13 @@ def main():
         )
         clear.click(fn=clear_fn, inputs=None, outputs=outputs)
 
-    demo.launch(server_name=server_name, server_port=server_port)
+    demo.launch(
+        server_name=server_name,
+        server_port=server_port,
+        theme=theme,
+        css=css,
+        allowed_paths=[tmp_folder],
+    )
 
 
 if __name__ == "__main__":

@@ -4,6 +4,8 @@
 import base64
 import os
 import shutil
+import subprocess
+import sys
 import threading
 import time
 from typing import Optional
@@ -52,6 +54,71 @@ from .queue_manager import QueueManager, UserQueue
 from .state import ClientSession, ModelBundle
 
 
+def _patch_viser_windows_autobuild() -> None:
+    if sys.platform != "win32":
+        return
+    try:
+        import viser._client_autobuild as _client_autobuild
+    except Exception:
+        return
+
+    original_build = getattr(_client_autobuild, "_build_viser_client", None)
+    if original_build is None or getattr(original_build, "_kimodo_windows_patch", False):
+        return
+
+    def _build_viser_client_patched(out_dir, cached: bool = True):
+        try:
+            return original_build(out_dir=out_dir, cached=cached)
+        except OSError as exc:
+            if getattr(exc, "winerror", None) != 193:
+                raise
+
+        node_bin_dir = _client_autobuild._install_sandboxed_node()
+        npm_path = node_bin_dir / "npm.cmd"
+        npx_path = node_bin_dir / "npx.cmd"
+        if not npm_path.exists():
+            npm_path = node_bin_dir / "npm"
+        if not npx_path.exists():
+            npx_path = node_bin_dir / "npx"
+
+        subprocess_env = os.environ.copy()
+        subprocess_env["NODE_VIRTUAL_ENV"] = str(node_bin_dir.parent)
+        subprocess_env["PATH"] = str(node_bin_dir) + ";" + subprocess_env["PATH"]
+
+        subprocess.run(
+            args=[str(npm_path), "install", "--legacy-peer-deps"],
+            env=subprocess_env,
+            cwd=_client_autobuild.client_dir,
+            check=False,
+        )
+        vite_result = subprocess.run(
+            args=[
+                str(npx_path),
+                "vite",
+                "build",
+                "--base",
+                "./",
+                "--outDir",
+                str(out_dir.absolute()),
+            ],
+            env=subprocess_env,
+            cwd=_client_autobuild.client_dir,
+            check=False,
+        )
+        if vite_result.returncode == 0:
+            _client_autobuild._write_last_built_src_hash(
+                _client_autobuild._compute_src_hash(_client_autobuild.client_dir / "src")
+            )
+            return
+        raise RuntimeError(
+            "Failed to build Viser client on Windows. "
+            "Please ensure Node.js tooling in the Viser sandbox is available."
+        )
+
+    _build_viser_client_patched._kimodo_windows_patch = True
+    _client_autobuild._build_viser_client = _build_viser_client_patched
+
+
 class Demo:
     def __init__(self, default_model_name: str = DEFAULT_MODEL):
         self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -74,6 +141,7 @@ class Demo:
         self.start_direction_markers: dict[int, viser_utils.WaypointMesh] = {}
         self.grid_handles: dict[int, viser.GridHandle] = {}
 
+        _patch_viser_windows_autobuild()
         self.server = viser.ViserServer(
             host=SERVER_NAME,
             port=SERVER_PORT,
