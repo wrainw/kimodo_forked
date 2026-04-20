@@ -17,7 +17,7 @@ from kimodo.exports.motion_io import (
     save_kimodo_npz,
 )
 from kimodo.model.registry import kimodo_short_key_for_skeleton_dataset, registry_skeleton_for_joint_count
-from kimodo.tools import to_torch
+from kimodo.tools import load_json, to_torch
 from kimodo.viz import viser_utils
 from kimodo.viz.viser_utils import GuiElements
 import numpy as np
@@ -71,6 +71,192 @@ def extract_intervals_and_singles(t: torch.Tensor):
             start_idx = i
 
     return intervals, intervals_indices, single_frames, single_frames_indices
+
+
+def apply_exporter_handoff(
+    demo,
+    client: viser.ClientHandle,
+    constraints_path: str,
+    meta_path: str | None = None,
+) -> None:
+    session = demo.client_sessions.get(client.client_id)
+    if session is None:
+        return
+
+    constraints_lst = load_constraints_lst(constraints_path, skeleton=session.skeleton)
+
+    with session.timeline_data["keyframe_update_lock"]:
+        for constraint in list(session.constraints.values()):
+            constraint.clear()
+        client.timeline.clear_keyframes()
+        client.timeline.clear_intervals()
+
+    device = demo.device
+    for constraint_obj in constraints_lst:
+        constraint_type = constraint_obj.name
+
+        frame_indices = constraint_obj.frame_indices
+        intervals, intervals_indices, single_frames, single_frames_indices = extract_intervals_and_singles(frame_indices)
+
+        load_targets: list[dict] = []
+        root_pos = None
+
+        if constraint_type == "root2d":
+            num_frames = constraint_obj.smooth_root_2d.shape[0]
+            root_pos = torch.zeros(num_frames, 3, device=device)
+            root_pos[:, 0] = constraint_obj.smooth_root_2d[:, 0]
+            root_pos[:, 2] = constraint_obj.smooth_root_2d[:, 1]
+            load_targets = [
+                {
+                    "track_name": "2D Root",
+                    "constraint_track": session.constraints["2D Root"],
+                }
+            ]
+        elif constraint_type == "fullbody":
+            load_targets = [
+                {
+                    "track_name": "Full-Body",
+                    "constraint_track": session.constraints["Full-Body"],
+                }
+            ]
+        elif constraint_type in {
+            "left-hand",
+            "right-hand",
+            "left-foot",
+            "right-foot",
+        }:
+            track_name = {
+                "left-hand": "Left Hand",
+                "right-hand": "Right Hand",
+                "left-foot": "Left Foot",
+                "right-foot": "Right Foot",
+            }[constraint_type]
+            load_targets = [
+                {
+                    "track_name": track_name,
+                    "constraint_track": session.constraints["End-Effectors"],
+                    "joint_names": constraint_obj.joint_names,
+                    "end_effector_type": constraint_type,
+                }
+            ]
+        elif constraint_type in {"end-effector", "end-effectors"}:
+            joint_names_set = set(constraint_obj.joint_names)
+            for jname, track_name, eff_type in [
+                ("LeftHand", "Left Hand", "left-hand"),
+                ("RightHand", "Right Hand", "right-hand"),
+                ("LeftFoot", "Left Foot", "left-foot"),
+                ("RightFoot", "Right Foot", "right-foot"),
+            ]:
+                if jname not in joint_names_set:
+                    continue
+                target_joint_names = [jname]
+                if "Hips" in joint_names_set:
+                    target_joint_names.append("Hips")
+                load_targets.append(
+                    {
+                        "track_name": track_name,
+                        "constraint_track": session.constraints["End-Effectors"],
+                        "joint_names": target_joint_names,
+                        "end_effector_type": eff_type,
+                    }
+                )
+            if not load_targets:
+                raise KeyError(
+                    "No recognized end-effector joint in constraint "
+                    f"joint_names={constraint_obj.joint_names}"
+                )
+        else:
+            raise KeyError(f"Unsupported constraint type in loader: {constraint_type}")
+
+        for target in load_targets:
+            track_id = session.timeline_data["tracks_ids"][target["track_name"]]
+            constraint_track = target["constraint_track"]
+
+            for (start_idx, end_idx), (start_idx_t, end_idx_t) in zip(intervals, intervals_indices):
+                interval_id = client.timeline.add_interval(track_id, start_idx, end_idx)
+                session.timeline_data["intervals"][interval_id] = {
+                    "track_id": track_id,
+                    "start_frame_idx": start_idx,
+                    "end_frame_idx": end_idx,
+                    "locked": False,
+                    "opacity": 1.0,
+                    "value": None,
+                }
+                if constraint_type == "root2d":
+                    constraint_track.add_interval(
+                        interval_id,
+                        start_idx,
+                        end_idx,
+                        root_pos[start_idx_t : end_idx_t + 1],
+                    )
+                elif constraint_type == "fullbody":
+                    constraint_track.add_interval(
+                        interval_id,
+                        start_idx,
+                        end_idx,
+                        constraint_obj.global_joints_positions[start_idx_t : end_idx_t + 1],
+                        constraint_obj.global_joints_rots[start_idx_t : end_idx_t + 1],
+                    )
+                else:
+                    constraint_track.add_interval(
+                        interval_id,
+                        start_idx,
+                        end_idx,
+                        constraint_obj.global_joints_positions[start_idx_t : end_idx_t + 1],
+                        constraint_obj.global_joints_rots[start_idx_t : end_idx_t + 1],
+                        target["joint_names"],
+                        target["end_effector_type"],
+                    )
+
+            for frame, frame_t in zip(single_frames, single_frames_indices):
+                keyframe_id = client.timeline.add_keyframe(track_id, frame)
+                session.timeline_data["keyframes"][keyframe_id] = {
+                    "track_id": track_id,
+                    "frame": frame,
+                    "locked": False,
+                    "opacity": 1.0,
+                    "value": None,
+                }
+                if constraint_type == "root2d":
+                    constraint_track.add_keyframe(
+                        keyframe_id,
+                        frame,
+                        root_pos[frame_t],
+                    )
+                elif constraint_type == "fullbody":
+                    constraint_track.add_keyframe(
+                        keyframe_id,
+                        frame,
+                        constraint_obj.global_joints_positions[frame_t],
+                        constraint_obj.global_joints_rots[frame_t],
+                    )
+                else:
+                    constraint_track.add_keyframe(
+                        keyframe_id,
+                        frame,
+                        constraint_obj.global_joints_positions[frame_t],
+                        constraint_obj.global_joints_rots[frame_t],
+                        target["joint_names"],
+                        target["end_effector_type"],
+                    )
+
+    if meta_path and os.path.exists(meta_path):
+        meta_info = load_json(meta_path)
+        text = str(meta_info.get("text", "")).strip()
+        duration_sec = float(meta_info.get("duration", 0.0))
+        if text:
+            client.timeline.clear_prompts()
+            fps = max(1e-6, float(session.model_fps))
+            n_frames = max(1, int(round(max(0.0, duration_sec) * fps)))
+            end_frame = n_frames - 1
+            client.timeline.add_prompt(text, 0, end_frame, color=PROMPT_COLORS[0])
+            client.timeline.set_zoom_settings(default_num_frames_zoom=int(math.ceil(1.10 * n_frames)))
+            if duration_sec > float(session.cur_duration):
+                session.cur_duration = float(duration_sec)
+                session.max_frame_idx = max(int(session.max_frame_idx), int(end_frame))
+
+    demo._apply_constraint_overlay_visibility(session)
+    demo.set_frame(client.client_id, 0)
 
 
 def create_gui(

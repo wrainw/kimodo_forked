@@ -3,6 +3,7 @@
 
 import base64
 import os
+from pathlib import Path
 import shutil
 import subprocess
 import sys
@@ -52,6 +53,32 @@ from .config import (
 from .embedding_cache import CachedTextEncoder
 from .queue_manager import QueueManager, UserQueue
 from .state import ClientSession, ModelBundle
+
+
+def _resolve_handoff_command_path() -> str | None:
+    env_path = os.environ.get("KIMODO_DEMO_HANDOFF_JSON", "").strip()
+    if env_path:
+        return env_path
+
+    try:
+        from kaguya.config import Config as KaguyaConfig
+    except Exception:
+        try:
+            here = Path(__file__).resolve()
+            for parent in here.parents:
+                src_dir = parent / "src"
+                config_file = src_dir / "kaguya" / "config.py"
+                if config_file.exists():
+                    src_dir_str = str(src_dir)
+                    if src_dir_str not in sys.path:
+                        sys.path.insert(0, src_dir_str)
+                    break
+            from kaguya.config import Config as KaguyaConfig
+        except Exception:
+            return None
+
+    cfg_path = str(getattr(KaguyaConfig, "KIMODO_DEMO_HANDOFF_JSON", "") or "").strip()
+    return cfg_path or None
 
 
 def _patch_viser_windows_autobuild() -> None:
@@ -170,6 +197,59 @@ class Demo:
 
         # create grid and floor
         self.floor_len = 20.0  # meters
+        self._handoff_command_path = _resolve_handoff_command_path()
+        self._handoff_last_mtime = 0.0
+
+    def _poll_exporter_handoff(self) -> None:
+        command_path = self._handoff_command_path
+        if not command_path:
+            return
+        if not os.path.exists(command_path):
+            return
+
+        try:
+            mtime = os.path.getmtime(command_path)
+        except OSError:
+            return
+        if mtime <= self._handoff_last_mtime:
+            return
+
+        active_sessions = [
+            session for client_id, session in list(self.client_sessions.items()) if self.client_active(client_id)
+        ]
+        if not active_sessions:
+            return
+
+        try:
+            payload = load_json(command_path)
+            constraints_path = str(payload.get("constraints_path", "")).strip()
+            if not constraints_path:
+                self._handoff_last_mtime = mtime
+                return
+            meta_path = str(payload.get("meta_path", "")).strip() or None
+
+            applied_any = False
+            for session in active_sessions:
+                try:
+                    ui.apply_exporter_handoff(self, session.client, constraints_path, meta_path)
+                    session.client.add_notification(
+                        title="Exporter handoff loaded",
+                        body=f"Loaded constraints from {constraints_path}",
+                        auto_close_seconds=4.0,
+                        color="green",
+                    )
+                    applied_any = True
+                except Exception as exc:
+                    session.client.add_notification(
+                        title="Exporter handoff failed",
+                        body=str(exc),
+                        auto_close_seconds=8.0,
+                        color="red",
+                    )
+            if applied_any:
+                self._handoff_last_mtime = mtime
+        except Exception as exc:
+            print(f"Failed to process handoff file {command_path}: {exc}")
 
     def ensure_examples_layout(self) -> None:
         os.makedirs(EXAMPLES_ROOT_DIR, exist_ok=True)
@@ -665,6 +745,7 @@ class Demo:
         cuda_check_interval = 300
         while True:
             last_update_time = time.time()
+            self._poll_exporter_handoff()
             if self.models:
                 # the max playback speed is 2x the model fps (from gui_playback_speed_buttons)
                 playback_fps = max(bundle.model_fps for bundle in self.models.values()) * 2.0
