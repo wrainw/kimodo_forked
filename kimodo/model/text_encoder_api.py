@@ -71,3 +71,24 @@ class TextEncoderAPI:
         padded_tensor = torch.from_numpy(padded_tensor)
         padded_tensor = padded_tensor.to(device=self.device, dtype=self.dtype)
         return padded_tensor, lengths
+
+    def generate_description(
+        self,
+        prompt: str,
+        *,
+        max_new_tokens: int = 96,
+        temperature: float = 0.2,
+        top_p: float = 0.9,
+    ) -> str:
+        prompt = str(prompt).strip()
+        if not prompt:
+            return ""
+
+        result = self.client.predict(
+            prompt,
+            float(max_new_tokens),
+            float(temperature),
+            float(top_p),
+            api_name="/generate_description",
+        )
+        return str(result).strip()
